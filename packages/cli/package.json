@@ -1,0 +1,19 @@
+{
+  "name": "@dependency-radar/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "dependency-radar": "./src/main.ts" },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dependency-radar/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

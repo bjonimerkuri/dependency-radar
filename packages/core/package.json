@@ -1,0 +1,21 @@
+{
+  "name": "@dependency-radar/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/semver": "^7.5.8",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "semver": "^7.6.0"
+  }
+}

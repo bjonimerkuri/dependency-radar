@@ -1,0 +1,15 @@
+{
+  "name": "dependency-radar",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "radar": "node packages/cli/src/main.ts"
+  }
+}
