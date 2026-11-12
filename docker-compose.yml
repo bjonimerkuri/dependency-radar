@@ -1,0 +1,14 @@
+services:
+  radar:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      TRUST_PROXY: "0"
+      RATE_LIMIT_PER_HOUR: "20"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      RADAR_AI_BASE_URL: "${RADAR_AI_BASE_URL:-}"
+      RADAR_AI_KEY: "${RADAR_AI_KEY:-}"
+      RADAR_AI_MODEL: "${RADAR_AI_MODEL:-}"
+      DAILY_AI_BUDGET: "100"
+    restart: unless-stopped

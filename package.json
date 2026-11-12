@@ -10,6 +10,7 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "radar": "node packages/cli/src/main.ts"
+    "radar": "node packages/cli/src/main.ts",
+    "start": "npm run start -w @dependency-radar/service"
   }
 }
