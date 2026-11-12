@@ -194,3 +194,46 @@ describe('createRegistryClient', () => {
     assert.equal(received?.redirect, 'error');
   });
 });
+
+describe('getManifest', () => {
+  it('reads the repository and homepage of the latest version', async () => {
+    const { client, calls } = scripted([
+      json({ name: 'react-router-dom', repository: { url: 'git+https://github.com/remix-run/react-router.git' }, homepage: 'https://reactrouter.com' }),
+    ]);
+    const result = await client.getManifest('react-router-dom');
+    assert.ok(result.ok);
+    assert.deepEqual(result.manifest.repository, { url: 'git+https://github.com/remix-run/react-router.git' });
+    assert.equal(result.manifest.homepage, 'https://reactrouter.com');
+    assert.deepEqual(calls, ['https://registry.npmjs.org/react-router-dom/latest']);
+  });
+
+  it('encodes scoped names and tolerates missing fields', async () => {
+    const { client, calls } = scripted([json({ name: 'x' })]);
+    const result = await client.getManifest('@types/node');
+    assert.ok(result.ok);
+    assert.equal(result.manifest.repository, undefined);
+    assert.equal(result.manifest.homepage, undefined);
+    assert.deepEqual(calls, ['https://registry.npmjs.org/@types%2Fnode/latest']);
+  });
+
+  it('reports invalid names, 404 and unexpected shapes', async () => {
+    const bad = await scripted([json({})]).client.getManifest('../x');
+    assert.ok(!bad.ok);
+    assert.equal(bad.code, 'INVALID_NAME');
+
+    const missing = await scripted([new Response('{}', { status: 404 })]).client.getManifest('nope');
+    assert.ok(!missing.ok);
+    assert.equal(missing.code, 'NOT_FOUND');
+
+    const odd = await scripted([json([1, 2])]).client.getManifest('react');
+    assert.ok(!odd.ok);
+    assert.equal(odd.code, 'INVALID_RESPONSE');
+  });
+
+  it('retries like the packument lookup', async () => {
+    const { client, calls } = scripted([new Response('', { status: 503 }), json({ name: 'x' })]);
+    const result = await client.getManifest('react');
+    assert.ok(result.ok);
+    assert.equal(calls.length, 2);
+  });
+});

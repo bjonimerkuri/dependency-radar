@@ -1,6 +1,9 @@
 import semver from 'semver';
 import type { FetchPackumentResult, Packument, RegistryClient } from './registry.ts';
 import type { DependencyEntry } from './types.ts';
+import type { UpdateExplanation } from './ai.ts';
+import type { ChangelogEvidence, Verdict } from './decide.ts';
+import type { PackageImpact } from './usage.ts';
 import { mapWithConcurrency } from './util.ts';
 
 export type UpdateKind = 'none' | 'patch' | 'minor' | 'major' | 'unknown';
@@ -31,6 +34,11 @@ export interface UpdateAnalysis {
   withinRange?: boolean;
   deprecated?: string;
   errorCode?: string;
+  impact?: PackageImpact;
+  changelog?: ChangelogEvidence;
+  explanation?: UpdateExplanation;
+  explanationError?: string;
+  verdict?: Verdict;
 }
 
 export interface AnalysisSummary {

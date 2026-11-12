@@ -28,6 +28,21 @@ export interface RegistryClient {
   getPackument(name: string): Promise<FetchPackumentResult>;
 }
 
+export interface ManifestInfo {
+  repository?: unknown;
+  homepage?: string;
+}
+
+export type FetchManifestResult =
+  | { ok: true; manifest: ManifestInfo }
+  | { ok: false; code: RegistryErrorCode; message: string };
+
+export interface ManifestClient {
+  getManifest(name: string): Promise<FetchManifestResult>;
+}
+
+export type NpmRegistry = RegistryClient & ManifestClient;
+
 export interface RegistryClientOptions {
   fetch?: typeof fetch;
   registryUrl?: string;
@@ -73,7 +88,9 @@ function retryAfterMs(response: Response): number | undefined {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
 }
 
-export function createRegistryClient(options: RegistryClientOptions = {}): RegistryClient {
+type JsonResult = { ok: true; json: unknown } | { ok: false; code: RegistryErrorCode; message: string };
+
+export function createRegistryClient(options: RegistryClientOptions = {}): NpmRegistry {
   const base = new URL(options.registryUrl ?? 'https://registry.npmjs.org');
   if (base.protocol !== 'https:' || !ALLOWED_REGISTRY_HOSTS.includes(base.host)) {
     throw new Error(`Registry host not allowed: ${base.host}`);
@@ -86,11 +103,11 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
   const maxBytes = options.maxBytes ?? 30_000_000;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
-  async function getPackument(name: string): Promise<FetchPackumentResult> {
-    if (!isValidPackageName(name)) {
-      return { ok: false, code: 'INVALID_NAME', message: `"${name}" is not a valid package name.` };
-    }
-    const url = `${base.origin}/${name.replace('/', '%2F')}`;
+  function urlFor(name: string, suffix = ''): string {
+    return `${base.origin}/${name.replace('/', '%2F')}${suffix}`;
+  }
+
+  async function requestJson(url: string, name: string, accept: string): Promise<JsonResult> {
     let failure: { code: RegistryErrorCode; message: string } = {
       code: 'UNAVAILABLE',
       message: 'The npm registry could not be reached.',
@@ -107,7 +124,7 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
       let response: Response;
       try {
         response = await doFetch(url, {
-          headers: { accept: ABBREVIATED_ACCEPT },
+          headers: { accept },
           redirect: 'error',
           signal: AbortSignal.timeout(timeoutMs),
         });
@@ -141,22 +158,42 @@ export function createRegistryClient(options: RegistryClientOptions = {}): Regis
       if (text.length > maxBytes) {
         return { ok: false, code: 'TOO_LARGE', message: `The registry response for "${name}" is too large.` };
       }
-
-      let raw: unknown;
       try {
-        raw = JSON.parse(text);
+        return { ok: true, json: JSON.parse(text) as unknown };
       } catch {
         return { ok: false, code: 'INVALID_RESPONSE', message: 'The registry response is not valid JSON.' };
       }
-      const packument = normalizePackument(raw);
-      if (!packument) {
-        return { ok: false, code: 'INVALID_RESPONSE', message: 'The registry response has an unexpected shape.' };
-      }
-      return { ok: true, packument };
     }
 
     return { ok: false, ...failure };
   }
 
-  return { getPackument };
+  async function getPackument(name: string): Promise<FetchPackumentResult> {
+    if (!isValidPackageName(name)) {
+      return { ok: false, code: 'INVALID_NAME', message: `"${name}" is not a valid package name.` };
+    }
+    const result = await requestJson(urlFor(name), name, ABBREVIATED_ACCEPT);
+    if (!result.ok) return result;
+    const packument = normalizePackument(result.json);
+    if (!packument) {
+      return { ok: false, code: 'INVALID_RESPONSE', message: 'The registry response has an unexpected shape.' };
+    }
+    return { ok: true, packument };
+  }
+
+  async function getManifest(name: string): Promise<FetchManifestResult> {
+    if (!isValidPackageName(name)) {
+      return { ok: false, code: 'INVALID_NAME', message: `"${name}" is not a valid package name.` };
+    }
+    const result = await requestJson(urlFor(name, '/latest'), name, 'application/json');
+    if (!result.ok) return result;
+    if (!isPlainObject(result.json)) {
+      return { ok: false, code: 'INVALID_RESPONSE', message: 'The registry response has an unexpected shape.' };
+    }
+    const manifest: ManifestInfo = { repository: result.json.repository };
+    if (typeof result.json.homepage === 'string') manifest.homepage = result.json.homepage;
+    return { ok: true, manifest };
+  }
+
+  return { getPackument, getManifest };
 }

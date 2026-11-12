@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createMemoryCache, withCache } from '../src/index.ts';
-import type { FetchPackumentResult, Packument, RegistryClient } from '../src/index.ts';
+import { createMemoryCache, withCache, withChangelogCache, withManifestCache } from '../src/index.ts';
+import type { ChangelogSource, FetchPackumentResult, ManifestClient, Packument, RegistryClient } from '../src/index.ts';
 
 const packument: Packument = { name: 'react', distTags: { latest: '18.3.1' }, versions: {} };
 
@@ -73,5 +73,84 @@ describe('withCache', () => {
     clock = 51;
     await cached.getPackument('react');
     assert.equal(state.calls, 2);
+  });
+});
+
+describe('withManifestCache and withChangelogCache', () => {
+  const repo = { kind: 'github' as const, owner: 'o', repo: 'r' };
+  const request = { packageName: 'pkg', from: '1.0.0', to: '2.0.0' };
+
+  it('caches manifests, shares concurrent lookups and caches 404s for a short time', async () => {
+    let clock = 0;
+    let calls = 0;
+    const found: ManifestClient = {
+      async getManifest(name) {
+        calls++;
+        await new Promise((resolve) => setTimeout(resolve, 3));
+        return name === 'missing' ? { ok: false, code: 'NOT_FOUND', message: 'x' } : { ok: true, manifest: {} };
+      },
+    };
+    const cached = withManifestCache(found, { ttlMs: 100, negativeTtlMs: 10, now: () => clock });
+    await Promise.all([cached.getManifest('a'), cached.getManifest('a')]);
+    await cached.getManifest('a');
+    assert.equal(calls, 1);
+    await cached.getManifest('missing');
+    await cached.getManifest('missing');
+    assert.equal(calls, 2);
+    clock = 11;
+    await cached.getManifest('missing');
+    assert.equal(calls, 3);
+    clock = 101;
+    await cached.getManifest('a');
+    assert.equal(calls, 4);
+  });
+
+  it('does not cache temporary manifest failures', async () => {
+    let calls = 0;
+    const flaky: ManifestClient = {
+      async getManifest() {
+        calls++;
+        return { ok: false, code: 'UNAVAILABLE', message: 'down' };
+      },
+    };
+    const cached = withManifestCache(flaky);
+    await cached.getManifest('a');
+    await cached.getManifest('a');
+    assert.equal(calls, 2);
+  });
+
+  it('caches changelog results per package and version range', async () => {
+    let calls = 0;
+    const source: ChangelogSource = {
+      async fetchChangelog(_repository, req) {
+        calls++;
+        return req.to === '2.0.0'
+          ? { ok: true, source: 'file', sections: [] }
+          : { ok: false, code: 'NOT_FOUND', message: 'none' };
+      },
+    };
+    const cached = withChangelogCache(source);
+    await cached.fetchChangelog(repo, request);
+    await cached.fetchChangelog(repo, request);
+    assert.equal(calls, 1);
+    await cached.fetchChangelog(repo, { ...request, to: '3.0.0' });
+    await cached.fetchChangelog(repo, { ...request, to: '3.0.0' });
+    assert.equal(calls, 2);
+    await cached.fetchChangelog({ ...repo, directory: 'packages/x' }, request);
+    assert.equal(calls, 3);
+  });
+
+  it('does not cache rate limits or other changelog errors', async () => {
+    let calls = 0;
+    const source: ChangelogSource = {
+      async fetchChangelog() {
+        calls++;
+        return { ok: false, code: 'RATE_LIMITED', message: 'limit' };
+      },
+    };
+    const cached = withChangelogCache(source);
+    await cached.fetchChangelog(repo, request);
+    await cached.fetchChangelog(repo, request);
+    assert.equal(calls, 2);
   });
 });
