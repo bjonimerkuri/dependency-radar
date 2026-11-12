@@ -50,7 +50,116 @@ const warnings: Warning[] = [
 
 const base = { color: false, showAll: false, fileName: 'package.json' };
 
+function withVerdicts(): ProjectAnalysis {
+  const verdicts: Record<string, UpdateAnalysis['verdict']> = {
+    react: { level: 'safe', confidence: 'high', reasons: ['Already up to date.'] },
+    'react-router-dom': { level: 'breaking', confidence: 'high', reasons: ['Your code uses json, which the changelog marks as changed or removed.'] },
+    vite: { level: 'safe', confidence: 'high', reasons: ['Compatible according to semver.'] },
+    zod: { level: 'review', confidence: 'medium', reasons: ['The changelog mentions parse, but not clearly as a breaking change.'] },
+  };
+  return {
+    ...analysis,
+    results: results.map((item) => {
+      const verdict = verdicts[item.name];
+      return verdict ? { ...item, verdict } : item;
+    }),
+  };
+}
+
+describe('formatReport with verdicts', () => {
+  it('does not repeat routine semver reasons once there is a verdict', () => {
+    const output = formatReport(entries, withVerdicts(), warnings, base);
+    assert.equal(output.includes('Major version change (6.22.1 to 7.1.0)'), false);
+    assert.match(output, /Your code uses json, which the changelog marks as changed or removed\./);
+  });
+
+  it('strips the list marker from changelog excerpts', () => {
+    const enriched = withVerdicts();
+    const router = enriched.results.find((item) => item.name === 'react-router-dom') as UpdateAnalysis;
+    router.changelog = {
+      status: 'found', source: 'file', sections: 1, lineCount: 2, truncated: false,
+      mentions: [{ symbol: 'json', inBreaking: true, excerpts: [{ id: 'L2', version: '7.0.0', text: '- Removed the json helper.' }] }],
+    };
+    const output = formatReport(entries, enriched, warnings, base);
+    assert.match(output, /# json: "Removed the json helper\."/);
+  });
+
+  it('uses BREAKING only when the verdict says so and counts by verdict', () => {
+    const output = formatReport(entries, withVerdicts(), warnings, base);
+    assert.match(output, /BREAKING\s+react-router-dom/);
+    assert.match(output, /REVIEW\s+zod/);
+    assert.match(output, /1 breaking, 1 to review, 1 safe, 1 up to date/);
+  });
+
+  it('shows a review of a major update as MAJOR, not BREAKING', () => {
+    const analysisWithMajorReview: ProjectAnalysis = {
+      ...analysis,
+      results: results.map((item) =>
+        item.name === 'react-router-dom'
+          ? { ...item, verdict: { level: 'review' as const, confidence: 'low' as const, reasons: ['Not sure.'] } }
+          : item,
+      ),
+    };
+    const output = formatReport(entries, analysisWithMajorReview, warnings, base);
+    assert.match(output, /MAJOR\s+react-router-dom/);
+    assert.equal(output.includes('BREAKING'), false);
+  });
+
+  it('shows changelog evidence and the AI explanation under a row', () => {
+    const enriched = withVerdicts();
+    const router = enriched.results.find((item) => item.name === 'react-router-dom') as UpdateAnalysis;
+    router.changelog = {
+      status: 'found',
+      source: 'file',
+      repository: 'o/r',
+      sections: 2,
+      lineCount: 9,
+      truncated: false,
+      mentions: [{ symbol: 'json', inBreaking: true, excerpts: [{ id: 'L3', version: '7.0.0', text: 'Removed the json helper.' }] }],
+    };
+    router.explanation = { summary: 'The json helper was removed.', confidence: 'high', unknown: false, findings: [], steps: ['Return plain objects.'], droppedFindings: 0 };
+    const output = formatReport(entries, enriched, warnings, base);
+    assert.match(output, /# json: "Removed the json helper\." \(7\.0\.0\)/);
+    assert.match(output, /AI: The json helper was removed\./);
+    assert.match(output, /\* Return plain objects\./);
+  });
+
+  it('says why a changelog was not used and when the AI was unavailable', () => {
+    const enriched = withVerdicts();
+    const zod = enriched.results.find((item) => item.name === 'zod') as UpdateAnalysis;
+    zod.changelog = { status: 'not-found', sections: 0, lineCount: 0, truncated: false, mentions: [], message: 'No changelog file or GitHub releases were found.' };
+    zod.explanationError = 'quota used up';
+    const output = formatReport(entries, enriched, warnings, base);
+    assert.match(output, /# No changelog used: No changelog file or GitHub releases were found\./);
+    assert.match(output, /AI unavailable: quota used up/);
+  });
+
+  it('says when no changelog entry mentions the imported names', () => {
+    const enriched = withVerdicts();
+    const zod = enriched.results.find((item) => item.name === 'zod') as UpdateAnalysis;
+    zod.changelog = { status: 'found', source: 'releases', sections: 3, lineCount: 9, truncated: false, mentions: [] };
+    assert.match(formatReport(entries, enriched, warnings, base), /Read 3 changelog versions; none mention the names you import\./);
+  });
+});
+
 describe('formatReport', () => {
+  it('shows where a package is used under major and review rows', () => {
+    const withImpact = results.map((item) =>
+      item.name === 'react-router-dom'
+        ? { ...item, impact: { level: 'used' as const, fileCount: 2, files: ['src/a.ts', 'src/b.ts'], symbols: ['json'], members: [], inScripts: false, dynamic: false } }
+        : item,
+    );
+    const output = formatReport(entries, { ...analysis, results: withImpact }, warnings, base);
+    assert.match(output, /> Used in 2 files: src\/a\.ts, src\/b\.ts\. Uses: json/);
+  });
+
+  it('describes the scan in the header', () => {
+    const output = formatReport(entries, analysis, warnings, { ...base, scan: { scannedFiles: 42, unsupportedFiles: 3, truncated: false } });
+    assert.match(output, /Scanned 42 source files; 3 Vue, Svelte or Astro files not analyzed\./);
+    const one = formatReport(entries, analysis, warnings, { ...base, scan: { scannedFiles: 1, unsupportedFiles: 0, truncated: true } });
+    assert.match(one, /Scanned 1 source file; the folder was too large to read completely\./);
+  });
+
   it('shows the summary line', () => {
     const output = formatReport(entries, analysis, warnings, base);
     assert.match(output, /4 analyzed: 1 major, 1 review, 1 safe, 1 up to date\. 1 skipped, 1 errors\./);

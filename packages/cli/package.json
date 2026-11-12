@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "dependency-radar": "./src/main.ts" },
+  "bin": {
+    "dependency-radar": "./src/main.ts"
+  },
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test \"test/**/*.test.ts\"",

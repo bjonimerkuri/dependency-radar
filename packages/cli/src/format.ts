@@ -1,17 +1,18 @@
-import type { DependencyEntry, ProjectAnalysis, UpdateAnalysis, Warning } from '@dependency-radar/core';
+import { classify, describeImpact, excerptText, reasonLines, summaryCounts } from '@dependency-radar/core';
+import type { DependencyEntry, ProjectAnalysis, ScanInfo, Tone, UpdateAnalysis, Warning } from '@dependency-radar/core';
 
 export interface FormatOptions {
   color: boolean;
   showAll: boolean;
   fileName: string;
   lockfileName?: string;
+  scan?: ScanInfo;
 }
 
-type Tone = 'red' | 'yellow' | 'green' | 'gray';
-
 const CODES: Record<Tone, string> = { red: '31', yellow: '33', green: '32', gray: '90' };
-const MAX_REASONS = 3;
 const MAX_NAME_WIDTH = 32;
+const MAX_MENTIONS = 2;
+const MAX_STEPS = 3;
 
 interface Row {
   result: UpdateAnalysis;
@@ -19,22 +20,7 @@ interface Row {
   label: string;
   tone: Tone;
   rank: number;
-}
-
-function classify(result: UpdateAnalysis): { label: string; tone: Tone; rank: number } {
-  if (result.status === 'error') return { label: 'ERROR', tone: 'red', rank: 4 };
-  if (result.status === 'skipped') return { label: 'SKIP', tone: 'gray', rank: 5 };
-  if (result.kind === 'none') return { label: 'OK', tone: 'gray', rank: 6 };
-  switch (result.preliminary) {
-    case 'breaking-candidate':
-      return { label: 'MAJOR', tone: 'red', rank: 0 };
-    case 'review':
-      return { label: 'REVIEW', tone: 'yellow', rank: 1 };
-    case 'safe':
-      return { label: 'SAFE', tone: 'green', rank: 3 };
-    default:
-      return { label: 'UNKNOWN', tone: 'gray', rank: 2 };
-  }
+  attention: boolean;
 }
 
 function detail(result: UpdateAnalysis): string {
@@ -43,6 +29,48 @@ function detail(result: UpdateAnalysis): string {
     return result.kind === 'none' ? `${result.current} (latest)` : `${result.current} -> ${result.target}`;
   }
   return result.target !== undefined ? `? -> ${result.target}` : '';
+}
+
+function summaryLine(analysis: ProjectAnalysis): string {
+  const summary = analysis.summary;
+  const counts = summaryCounts(analysis).map((entry) => `${entry.value} ${entry.label}`);
+  return `${summary.analyzed} analyzed: ${counts.join(', ')}. ${summary.skipped} skipped, ${summary.errors} errors.`;
+}
+
+function quote(text: string, limit = 120): string {
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function extraLines(result: UpdateAnalysis, showAll: boolean, attention: boolean): string[] {
+  if (result.status !== 'analyzed' || !(showAll || attention)) return [];
+  const lines: string[] = [];
+
+  for (const reason of reasonLines(result)) lines.push(`        - ${reason}`);
+
+  if (result.impact) lines.push(`        > ${describeImpact(result.impact)}`);
+
+  const changelog = result.changelog;
+  if (changelog) {
+    if (changelog.status === 'found') {
+      for (const mention of changelog.mentions.slice(0, MAX_MENTIONS)) {
+        const excerpt = mention.excerpts[0];
+        if (excerpt) lines.push(`        # ${mention.symbol}: "${quote(excerptText(excerpt.text))}" (${excerpt.version})`);
+      }
+      if (changelog.mentions.length === 0) {
+        lines.push(`        # Read ${changelog.sections} changelog version${changelog.sections === 1 ? '' : 's'}; none mention the names you import.`);
+      }
+    } else {
+      lines.push(`        # No changelog used: ${changelog.message ?? changelog.status}`);
+    }
+  }
+
+  if (result.explanation) {
+    lines.push(`        AI: ${quote(result.explanation.summary, 300)}`);
+    for (const step of result.explanation.steps.slice(0, MAX_STEPS)) lines.push(`          * ${quote(step, 200)}`);
+  } else if (result.explanationError) {
+    lines.push(`        AI unavailable: ${result.explanationError}`);
+  }
+  return lines;
 }
 
 export function formatReport(
@@ -61,38 +89,33 @@ export function formatReport(
     ...classify(result),
   }));
   const visible = rows
-    .filter((row) => options.showAll || row.rank <= 2 || row.rank === 4)
+    .filter((row) => options.showAll || row.attention)
     .sort((a, b) => a.rank - b.rank || a.result.name.localeCompare(b.result.name));
   const hidden = rows.length - visible.length;
-
-  const summary = analysis.summary;
-  const counts = [
-    `${summary.breakingCandidate} major`,
-    `${summary.review} review`,
-    `${summary.safe} safe`,
-    `${summary.upToDate} up to date`,
-  ];
-  if (summary.unknown > 0) counts.push(`${summary.unknown} unknown`);
 
   const lines: string[] = [
     bold('Dependency Radar'),
     `${options.fileName} (${options.lockfileName ?? 'no lockfile'})`,
-    '',
-    `${summary.analyzed} analyzed: ${counts.join(', ')}. ${summary.skipped} skipped, ${summary.errors} errors.`,
-    '',
   ];
+  if (options.scan) {
+    const { scannedFiles, unsupportedFiles, truncated } = options.scan;
+    const parts = [`Scanned ${scannedFiles} source file${scannedFiles === 1 ? '' : 's'}`];
+    if (unsupportedFiles > 0) {
+      parts.push(`${unsupportedFiles} Vue, Svelte or Astro file${unsupportedFiles === 1 ? '' : 's'} not analyzed`);
+    }
+    if (truncated) parts.push('the folder was too large to read completely');
+    lines.push(`${parts.join('; ')}.`);
+  }
+  lines.push('', summaryLine(analysis), '');
 
   const width = Math.min(MAX_NAME_WIDTH, Math.max(0, ...visible.map((row) => row.result.name.length)));
   for (const row of visible) {
     const position = row.entry?.position;
     const where = position ? `  ${paint('gray', `${options.fileName}:${position.line}`)}` : '';
     lines.push(
-      `${paint(row.tone, row.label.padEnd(7))} ${row.result.name.padEnd(width)}  ${detail(row.result)}${where}`,
+      `${paint(row.tone, row.label.padEnd(8))} ${row.result.name.padEnd(width)}  ${detail(row.result)}${where}`,
     );
-    if (row.result.status === 'analyzed' && (options.showAll || row.rank <= 2)) {
-      const reasons = row.result.reasons.filter((reason) => !reason.startsWith('No lockfile'));
-      for (const reason of reasons.slice(0, MAX_REASONS)) lines.push(`        - ${reason}`);
-    }
+    lines.push(...extraLines(row.result, options.showAll, row.attention));
   }
 
   if (visible.length === 0) lines.push('Nothing needs attention.');
