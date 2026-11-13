@@ -4,7 +4,7 @@ Tells you which dependency updates will break your code.
 
 ## Status
 
-Parts 1 to 4 and 7 are done in `@dependency-radar/core`, `@dependency-radar/cli` prints the result in the terminal, and `@dependency-radar/service` is a web service that serves the same analysis in a browser.
+Parts 1 to 4, 7, 8 and 9.1 to 9.2 are done in `@dependency-radar/core`, `@dependency-radar/cli` prints the result in the terminal, and `@dependency-radar/service` is a web service that serves the same analysis in a browser.
 
 - Part 1: reads and validates a package.json (and an optional package-lock.json), classifies every version specifier, and records the exact line and column of each dependency.
 - Part 2: looks up each package in the npm registry (retries, backoff, timeouts, host allow-list, cache) and gives every dependency a preliminary verdict from semver: safe, review or breaking candidate, with a confidence level and the reasons.
@@ -51,15 +51,51 @@ The verdict is always worded as signals. A result with no signals says so plainl
 
 Known limits: it is a heuristic check, not a malware scanner, so expect both false alarms and misses. Packages are only compared with a built-in list of about 250 popular names. Only text files are read. Files in `node_modules`, `dist` and similar folders are skipped. Open unknown projects in a disposable environment (a Codespace, a container or a virtual machine) even when nothing is found.
 
+## From a security ticket to changes
+
+Paste the text of a security ticket (Snyk, Dependabot, Trivy, `npm audit` or an internal ticket) together with your package.json and package-lock.json. You get what to change, on which line, to which version and why, as a ready patch.
+
+```
+npm run radar -- fix --ticket ticket.txt ../the-project/package.json --html fix.html --pr pr.md
+```
+
+In the web service, open `/fix` (`/fix/example` fills the form with an example, `/fix/demo` shows a sample result built offline, `POST /api/fix` returns JSON). You can paste the files or give a public GitHub repository.
+
+How it works:
+
+1. The facts are read from the ticket: package, affected version, fixed version, CVE or GHSA id, severity. When no fixed version is given, the advisory id is looked up in the OSV database (`api.osv.dev`, added to the allow-list). `--offline` or `--no-lookup` turns this off, and only the id and the package name are ever sent.
+2. The package is found in the project: direct or indirect, and with the lockfile the path that pulls it in (`project > express@4.17.1 > qs@6.7.0`). Every installed copy is listed with its own path.
+3. Options are built: raise the direct dependency, update inside the existing range (`npm update`), or an override (`overrides`, `resolutions` or `pnpm.overrides`, decided by the package manager). The recommended option is applied to a copy of package.json by editing the text, so the formatting is kept and the diff only has the changed lines. The line number comes from the JSON structure, not from AI.
+4. For a major fix, the cost is shown before the recommendation, and the changelog between the two versions is checked against the names your code imports (parts 3 and 4). When the changelog cannot be found the answer is "I am not sure".
+5. The output is the diff, the commands to refresh the lockfile and a list of checks (`npm ls <package>`, `npm audit`, your tests).
+
+The wording never says a vulnerability is fixed. It says "according to the advisory it is fixed in X; verify with npm audit".
+
+Cases it handles: several copies of one package in different versions, a ticket without any fixed version ("no fix", nothing is invented), a package that is only a dev dependency, a fix that is already installed, a package that is not in the project, a missing or unsupported lockfile (then only direct dependencies are found), an existing override that blocks the fixed version, a direct dependency that clashes with a nested copy, `npm audit fix --force` or a suggested downgrade (flagged as a risk and not used), and tickets for other ecosystems (not recognised, so reported as not analyzed).
+
+### Several tickets at once
+
+Put several tickets in one file separated by a line of three dashes (or repeat `--ticket`, or paste them in the web form separated the same way). The result is one diff and a table that shows which change closes which ticket. Two tickets for the same package with different fixed versions get the lowest version that satisfies both, and the cost is shown if that is a major version. A repeated advisory or an identical ticket is merged. A ticket that cannot be read is listed as "not analyzed" with the reason and does not stop the others. At most 20 tickets and about 200 000 characters are read.
+
+### Description for the pull request or Jira
+
+`--pr pr.md` (or `--pr -` to print only the description) writes a description with a one-line title, what changes (package, from which version to which, the package.json line), why (advisory ids and the careful wording above), the risk (a major change, and which files import the package), the checks, the references and what was left unchanged. `--pr-format jira` gives plain text, `--lang sq` gives Albanian, and the text is shortened to the limits of GitHub (60 000 characters) and Jira (30 000). If the ticket has no id the field says so and nothing is invented. The web result shows both versions as text that can be selected with one click, because the pages have no scripts. A warning reminds you to check for confidential text before pasting.
+
+### In a CI job
+
+`--fail-if-changes` exits with code 2 when any package needs a change, 0 when nothing does and 1 on an error. Reading your files, the import scan and the diff happen on your computer. There is no GitHub Action or `npx` package yet (part 9.3 of the plan is intentionally left for later).
+
+Known limits of this part: the text of the ticket is trusted as written (a wrong fixed version in the ticket gives a wrong plan, so run `npm audit` afterwards); reachability is not checked, only whether a package is imported; only package-lock.json is read; and the ticket text is treated as data, never as instructions.
+
 ## Web service
 
 ```
 npm start
 ```
 
-Open http://localhost:8080. Paste a package.json or enter a public GitHub repository address (optionally a folder for monorepos, or a `/tree/branch/folder` address). `/demo` shows a sample report built offline from made-up packages, `/health` is for uptime checks, and `/api/analyze` and `/api/demo` return JSON.
+Open http://localhost:8080. Paste a package.json or enter a public GitHub repository address (optionally a folder for monorepos, or a `/tree/branch/folder` address). `/demo` shows a sample report built offline from made-up packages, `/health` is for uptime checks, `/check` is the pre-install check, `/fix` turns security tickets into changes, and `/api/analyze`, `/api/demo`, `/api/check` and `/api/fix` return JSON.
 
-What it does for safety: every outgoing request goes to an allow-list of hosts (npm, GitHub, and the supported AI hosts), repositories are read as zip files in memory with limits on size, entries and decompressed bytes (code is never executed or written to disk), requests are limited per address, the AI has a daily budget and a cap per analysis, a visitor's own AI key is used for one request only and is never stored, logged or sent back, and every page has a strict content security policy with no scripts.
+What it does for safety: every outgoing request goes to an allow-list of hosts (npm, GitHub, the OSV advisory database and the supported AI hosts), repositories are read as zip files in memory with limits on size, entries and decompressed bytes (code is never executed or written to disk), requests are limited per address, the AI has a daily budget and a cap per analysis, a visitor's own AI key is used for one request only and is never stored, logged or sent back, and every page has a strict content security policy with no scripts.
 
 Settings (environment variables): `PORT`, `HOST`, `TRUST_PROXY=1` (only behind a proxy you control, it uses the last X-Forwarded-For entry), `RATE_LIMIT_PER_HOUR` (default 20), `GITHUB_TOKEN`, and `RADAR_AI_BASE_URL`, `RADAR_AI_KEY`, `RADAR_AI_MODEL` plus `DAILY_AI_BUDGET` (default 100) to offer a free server-side AI. There is a `Dockerfile` and a `docker-compose.yml`.
 
