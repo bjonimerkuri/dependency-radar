@@ -74,6 +74,28 @@ th{color:var(--muted);font-weight:500}
 .banner{margin:0;padding:10px 14px;border-radius:8px;background:var(--amber-bg);color:var(--amber);font-size:14px}
 .notes ul{margin:6px 0 0;padding-left:20px}
 footer{font-size:13px;color:var(--muted)}
+body{background-image:radial-gradient(ellipse at 50% -15%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 55%)}
+main{padding-top:40px;gap:26px}
+header .brand{font-size:22px;letter-spacing:-.02em}
+.tiles{gap:16px}
+.tile{border-radius:14px;padding:19px 20px;box-shadow:0 5px 18px rgb(20 30 60 / .035)}
+.card{border-radius:14px;padding:21px 23px;box-shadow:0 5px 18px rgb(20 30 60 / .035)}
+details{border-radius:12px}
+summary{line-height:1.5}
+.nav a:hover{text-decoration:underline}
+.banner{border-radius:10px}
+.report-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:20px 0 22px;border-bottom:1px solid var(--line);border-left:4px solid var(--accent);padding-left:20px}
+.report-intro h1{margin:0;font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-.03em}
+.report-intro p{max-width:650px;margin:9px 0 0;color:var(--muted);font-size:15px}
+.report-kicker{margin:0 0 8px;color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.report-stamp{flex:0 0 auto;color:var(--muted);font-size:13px;text-align:right}
+.report-stamp strong{display:block;color:var(--ink);font-size:24px;line-height:1.1}
+.section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:4px 0 -8px}
+.section-heading h2{margin:0;font-size:16px}
+.section-heading span{color:var(--muted);font-size:13px}
+@media(max-width:600px){main{padding:22px 15px 34px;gap:19px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.tile{padding:14px}.tile .value{font-size:27px}.card{padding:16px}.card .ver{display:block;margin:4px 0 0}.card .head{align-items:flex-start}}
+@media(max-width:600px){.report-intro{display:block;padding:20px}.report-stamp{margin-top:16px;text-align:left}.section-heading{display:block}.section-heading span{display:block;margin-top:4px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
 `;
 
 function versionText(result: UpdateAnalysis): string {
@@ -160,6 +182,9 @@ export function formatHtml(
     )
     .join('');
 
+  const attentionCount = attention.length;
+  const attentionLabel = attentionCount === 0 ? 'No packages need attention' : `${attentionCount} package${attentionCount === 1 ? '' : 's'} need${attentionCount === 1 ? 's' : ''} review`;
+
   const cards =
     attention.length > 0
       ? attention.map((row) => card(row.result, row.entry, options.fileName)).join('')
@@ -191,7 +216,9 @@ export function formatHtml(
 <main>
 ${options.homeHref ? `<nav class="nav"><a href="${e(options.homeHref)}">&larr; Analyze another project</a></nav>` : ''}${options.banner ? `<p class="banner">${e(options.banner)}</p>` : ''}
 <header><div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="11" fill="none" stroke="var(--accent)" stroke-width="2"/><circle cx="13" cy="13" r="6" fill="none" stroke="var(--accent)" stroke-width="2"/><circle cx="13" cy="13" r="2" fill="var(--accent)"/></svg>Dependency Radar</div><p class="meta">${meta.join(' &middot; ')}</p></header>
+<section class="report-intro"><div><p class="report-kicker">Dependency review</p><h1>Know what deserves a closer look.</h1><p>${e(attentionLabel)}. The signals below are evidence for your review, not a guarantee of safety.</p></div><div class="report-stamp"><strong>${attentionCount}</strong>needs attention</div></section>
 <section class="tiles">${tiles}</section>
+<div class="section-heading"><h2>Priority findings</h2><span>Sorted by risk and impact</span></div>
 <section class="cards">${cards}</section>
 ${otherTable}
 ${notesHtml}
