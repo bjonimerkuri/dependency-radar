@@ -1,16 +1,21 @@
 {
-  "name": "dependency-radar",
+  "name": "@dependency-radar/core",
+  "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
-  "engines": {
-    "node": ">=22.18"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "radar": "node packages/cli/src/main.ts",
-    "start": "npm run start -w @dependency-radar/service"
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/semver": "^7.5.8"
+  },
+  "dependencies": {
+    "semver": "^7.6.0",
+    "typescript": ">=5.6.0 <7"
   }
 }
