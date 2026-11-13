@@ -6,7 +6,7 @@ COPY package-lock.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/cli/package.json packages/cli/
 COPY packages/service/package.json packages/service/
-RUN npm ci --omit=dev --workspaces --include-workspace-root
+RUN npm ci --omit=dev
 COPY packages ./packages
 USER node
 EXPOSE 8080
