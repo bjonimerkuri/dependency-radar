@@ -107,15 +107,33 @@ export { parseTicket } from './ticket.ts';
 export type { ParsedTicket, ParseTicketOptions, TicketFinding, TicketSeverity } from './ticket.ts';
 export { buildLockGraph } from './lock-graph.ts';
 export type { Dependent, LockGraph, LockNode } from './lock-graph.ts';
-export { planRemediation } from './remediate.ts';
+export { planMultiRemediation, planRemediation } from './remediate.ts';
 export type {
   AffectedInstance,
   FindingPlan,
   FindingStatus,
   FixKind,
   FixOption,
+  MultiRemediationInput,
+  MultiRemediationPlan,
+  MultiRemediationResult,
   PackageManager,
   RemediationInput,
   RemediationPlan,
   RemediationResult,
+  RowStatus,
+  TicketInput,
+  TicketOutcome,
+  TicketRow,
 } from './remediate.ts';
+export { ALLOWED_ADVISORY_HOSTS, createOsvSource, fixedVersionsFromOsv, planMultiRemediationWithLookup, planRemediationWithLookup } from './advisories.ts';
+export type { AdvisorySource, LookupNote, LookupOptions, OsvSourceOptions } from './advisories.ts';
+export { splitTickets } from './tickets.ts';
+export type { SplitTicket, SplitTicketsOptions, SplitTicketsResult } from './tickets.ts';
+export { buildPrDescription, PR_MAX_CHARS } from './pr-description.ts';
+export type { PrDescription, PrFormat, PrLanguage, PrOptions, UsageLike } from './pr-description.ts';
+export { FIX_LIMITS, fixHeadline, formatFixHtml } from './fix-html.ts';
+export type { FixHtmlOptions } from './fix-html.ts';
+export { applyMajorChecks, checkMajorFixChangelogs, describeMajorCheck } from './fix-changelog.ts';
+export type { FixChangelogDeps, MajorCheckStatus, MajorFixCheck } from './fix-changelog.ts';
+export { displayAdvisoryId } from './util.ts';

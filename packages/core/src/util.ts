@@ -62,3 +62,9 @@ export async function mapWithConcurrency<T>(
   });
   await Promise.all(workers);
 }
+
+export function displayAdvisoryId(id: string): string {
+  const text = id.trim();
+  if (/^ghsa-/i.test(text)) return `GHSA-${text.slice(5).toLowerCase()}`;
+  return text.toUpperCase();
+}
