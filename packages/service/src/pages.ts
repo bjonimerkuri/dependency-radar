@@ -94,7 +94,7 @@ ${radio('byok', 'Use my own key')}
 <input type="password" name="ai_apiKey" autocomplete="off"></label>
 <p class="hint">AI explanations send parts of the changelog to the service you choose.</p>
 </fieldset>
-<div class="actions"><button type="submit">Analyze</button><a class="button secondary" href="/demo">See a sample report</a><a class="button secondary" href="/check">Check a repository before installing it</a></div>
+<div class="actions"><button type="submit">Analyze</button><a class="button secondary" href="/demo">See a sample report</a><a class="button secondary" href="/check">Check a repository before installing it</a><a class="button secondary" href="/fix">Turn a security ticket into changes</a></div>
 <p class="hint">Your package.json is used to look up public packages and is not stored. Only public repositories are supported.</p>
 </form>`,
   );
@@ -115,6 +115,48 @@ ${error}
 <input type="url" name="githubUrl" placeholder="https://github.com/owner/repo" value="${e(options.githubUrl ?? '')}" autocomplete="off" required></label>
 <div class="actions"><button type="submit">Check</button><a class="button secondary" href="/">Back</a></div>
 <p class="hint">It looks for install scripts that download code, files that run when a folder is opened, look-alike package names, obfuscated code and more. It only reads files and never runs them. Finding no signals does not mean a repository is safe.</p>
+</form>`,
+  );
+}
+
+export interface FixPageValues {
+  ticket?: string;
+  packageJson?: string;
+  lockfile?: string;
+  githubUrl?: string;
+  path?: string;
+  packageManager?: string;
+  language?: string;
+}
+
+export function renderFixPage(options: { error?: string; values?: FixPageValues } = {}): string {
+  const values = options.values ?? {};
+  const error = options.error ? `<p class="error" role="alert">${e(options.error)}</p>` : '';
+  const option = (value: string, label: string, current: string | undefined, fallback = ''): string =>
+    `<option value="${value}"${(current ?? fallback) === value ? ' selected' : ''}>${e(label)}</option>`;
+  return layout(
+    'From ticket to changes',
+    `<header><h1>From ticket to changes</h1><p class="lead">Paste a security ticket and your package.json. You get what to change, on which line, to which version, and why.</p></header>
+${error}
+<form method="post" action="/fix">
+<label>Security ticket <small>From Snyk, Dependabot, Trivy, npm audit or your own team. For several tickets, separate them with a line of three dashes (---).</small>
+<textarea name="ticket" spellcheck="false" placeholder="Affected package: lodash&#10;Installed version: 4.17.20&#10;Fixed in: 4.17.21&#10;CVE-2021-23337">${e(values.ticket ?? '')}</textarea></label>
+<label>package.json
+<textarea name="packageJson" spellcheck="false" placeholder="{ &quot;dependencies&quot;: { ... } }">${e(values.packageJson ?? '')}</textarea></label>
+<details><summary>package-lock.json (optional, needed to trace packages that you do not depend on directly)</summary>
+<label><textarea name="lockfile" spellcheck="false">${e(values.lockfile ?? '')}</textarea></label></details>
+<p class="or">or use a public GitHub repository instead of pasting the files</p>
+<label>Public GitHub repository <small>It also shows which files use each package.</small>
+<input type="url" name="githubUrl" placeholder="https://github.com/owner/repo" value="${e(values.githubUrl ?? '')}" autocomplete="off"></label>
+<label>Folder inside the repository <small>Optional, for monorepos.</small>
+<input type="text" name="path" placeholder="packages/web" value="${e(values.path ?? '')}" autocomplete="off"></label>
+<fieldset>
+<legend>Options</legend>
+<label>Package manager <select name="packageManager">${option('', 'Detect from package.json (npm if unknown)', values.packageManager)}${option('npm', 'npm', values.packageManager)}${option('yarn', 'Yarn', values.packageManager)}${option('pnpm', 'pnpm', values.packageManager)}</select></label>
+<label>Language of the pull request description <select name="language">${option('en', 'English', values.language, 'en')}${option('sq', 'Shqip', values.language, 'en')}</select></label>
+</fieldset>
+<div class="actions"><button type="submit">Make the changes</button><a class="button secondary" href="/fix/example">Fill in an example</a><a class="button secondary" href="/fix/demo">See a sample result</a><a class="button secondary" href="/">Back</a></div>
+<p class="hint">Do not paste confidential information. The ticket and your files are used to build the answer and are not stored. When a ticket has no fixed version, its advisory id and package name are sent to the OSV advisory database.</p>
 </form>`,
   );
 }

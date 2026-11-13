@@ -1,7 +1,9 @@
 import { formatHtml, formatRiskHtml, riskHeadline } from '@dependency-radar/core';
-import type { AiChoice, AnalysisReport, AnalyzeRequest, AnalyzeService, CheckReport } from './service.ts';
+import { formatFixHtml } from '@dependency-radar/core';
+import type { AiChoice, AnalysisReport, AnalyzeRequest, AnalyzeService, CheckReport, FixReport, FixRequest } from './service.ts';
+import { buildFixDemo, DEMO_FIX_LOCKFILE, DEMO_FIX_PACKAGE_JSON, DEMO_FIX_TICKETS } from './fix-demo.ts';
 import type { RateLimiter } from './limits.ts';
-import { HTML_CSP, renderCheckPage, renderErrorPage, renderHomePage } from './pages.ts';
+import { HTML_CSP, renderCheckPage, renderErrorPage, renderFixPage, renderHomePage } from './pages.ts';
 import type { HomeValues } from './pages.ts';
 
 export interface HttpRequest {
@@ -24,6 +26,7 @@ export interface HandlerOptions {
   service: AnalyzeService;
   limiter: RateLimiter;
   demo: () => Promise<AnalysisReport>;
+  fixDemo?: () => FixReport;
   serverAiEnabled: boolean;
   maxBodyBytes?: number;
   onEvent?: (event: { route: string; status: number; durationMs: number }) => void;
@@ -104,6 +107,60 @@ function checkHtml(check: CheckReport): string {
     generatedAt: check.generatedAt.slice(0, 16).replace('T', ' ') + ' UTC',
     homeHref: '/check',
   });
+}
+
+function fixJson(fix: FixReport): unknown {
+  const { hunks: _hunks, ...plan } = fix.plan;
+  return {
+    source: fix.source,
+    subject: fix.subject,
+    generatedAt: fix.generatedAt,
+    plan,
+    pr: fix.pr,
+    notes: fix.notes,
+    majorChecks: fix.majorChecks,
+    scanned: fix.scanned,
+  };
+}
+
+function fixHtml(fix: FixReport): string {
+  return formatFixHtml(fix.plan, {
+    subject: fix.subject,
+    generatedAt: fix.generatedAt.slice(0, 16).replace('T', ' ') + ' UTC',
+    homeHref: '/fix',
+    notes: fix.notes,
+    pr: fix.pr,
+    ...(fix.source === 'demo' ? { banner: 'Sample data for a made-up project. Nothing was sent to npm, GitHub or any advisory service.' } : {}),
+  });
+}
+
+const FIX_FIELDS = ['ticket', 'packageJson', 'lockfile', 'githubUrl', 'path', 'packageManager', 'language'] as const;
+
+function fixRequestFromJson(body: string): FixRequest | undefined {
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return undefined;
+  const source = data as Record<string, unknown>;
+  const request: FixRequest = {};
+  for (const key of FIX_FIELDS) {
+    const field = stringField(source, key);
+    if (field !== undefined) request[key] = field;
+  }
+  return request;
+}
+
+function fixRequestFromForm(body: string): FixRequest {
+  const params = new URLSearchParams(body);
+  const request: FixRequest = {};
+  for (const key of FIX_FIELDS) {
+    const value = params.get(key);
+    if (value !== null && value !== '') request[key] = value;
+  }
+  return request;
 }
 
 function stringField(source: Record<string, unknown>, key: string): string | undefined {
@@ -208,13 +265,30 @@ export function createHandler(options: HandlerOptions): Handler {
       return { name: 'api-demo', response: json(200, reportJson(await demo())) };
     }
 
+    if (path === '/fix' && method === 'GET') return { name: 'fix-form', response: html(200, renderFixPage()) };
+    if (path === '/fix/example') {
+      if (method !== 'GET') return { name: 'fix-example', response: notAllowed('GET') };
+      return {
+        name: 'fix-example',
+        response: html(200, renderFixPage({ values: { ticket: DEMO_FIX_TICKETS, packageJson: DEMO_FIX_PACKAGE_JSON, lockfile: DEMO_FIX_LOCKFILE } })),
+      };
+    }
+    if (path === '/fix/demo') {
+      if (method !== 'GET') return { name: 'fix-demo', response: notAllowed('GET') };
+      return { name: 'fix-demo', response: html(200, fixHtml((options.fixDemo ?? buildFixDemo)())) };
+    }
+    if (path === '/api/fix/demo') {
+      if (method !== 'GET') return { name: 'api-fix-demo', response: notAllowed('GET') };
+      return { name: 'api-fix-demo', response: json(200, fixJson((options.fixDemo ?? buildFixDemo)())) };
+    }
+
     if (path === '/check' && method === 'GET') {
       return { name: 'check-form', response: html(200, renderCheckPage()) };
     }
-    const known: Record<string, string> = { '/report': 'report', '/api/analyze': 'api-analyze', '/check': 'check', '/api/check': 'api-check' };
+    const known: Record<string, string> = { '/report': 'report', '/api/analyze': 'api-analyze', '/check': 'check', '/api/check': 'api-check', '/fix': 'fix', '/api/fix': 'api-fix' };
     const name = known[path];
     if (name === undefined) return { name: 'unknown', response: notFound() };
-    if (method !== 'POST') return { name, response: notAllowed(path === '/check' ? 'GET, POST' : 'POST') };
+    if (method !== 'POST') return { name, response: notAllowed(path === '/check' || path === '/fix' ? 'GET, POST' : 'POST') };
 
     const wantsJson = path.startsWith('/api/');
     const expected = wantsJson ? 'application/json' : 'application/x-www-form-urlencoded';
@@ -236,6 +310,21 @@ export function createHandler(options: HandlerOptions): Handler {
         response: wantsJson
           ? jsonError(429, 'RATE_LIMITED', message, { 'retry-after': seconds })
           : html(429, renderErrorPage('Too many requests', message), { 'retry-after': seconds }),
+      };
+    }
+
+    if (path === '/fix' || path === '/api/fix') {
+      if (wantsJson) {
+        const parsed = fixRequestFromJson(request.body);
+        if (!parsed) return { name, response: jsonError(400, 'INVALID_JSON', 'The request body must be a JSON object.') };
+        const outcome = await options.service.fix(parsed);
+        return { name, response: outcome.ok ? json(200, fixJson(outcome.fix)) : jsonError(outcome.status, outcome.code, outcome.message) };
+      }
+      const parsed = fixRequestFromForm(request.body);
+      const outcome = await options.service.fix(parsed);
+      return {
+        name,
+        response: outcome.ok ? html(200, fixHtml(outcome.fix)) : html(outcome.status, renderFixPage({ error: outcome.message, values: parsed })),
       };
     }
 

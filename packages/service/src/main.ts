@@ -3,6 +3,7 @@ import process from 'node:process';
 import {
   createGithubChangelogSource,
   createMemoryCache,
+  createOsvSource,
   createNpmStatsSource,
   createOpenAiCompatibleProvider,
   createRegistryClient,
@@ -40,6 +41,7 @@ const service = createAnalyzeService({
   manifests: withManifestCache(npm),
   changelogs: withChangelogCache(createGithubChangelogSource(token ? { token } : {})),
   stats: createNpmStatsSource(),
+  advisories: createOsvSource(),
   ...(serverAi ? { serverAi, aiBudget: createDailyBudget({ limit: number(env.DAILY_AI_BUDGET, 100) }) } : {}),
 });
 

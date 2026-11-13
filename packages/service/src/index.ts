@@ -10,6 +10,9 @@ export type {
   CheckOutcome,
   CheckReport,
   CheckRequest,
+  FixOutcome,
+  FixReport,
+  FixRequest,
   ServiceDeps,
 } from './service.ts';
 export { createDailyBudget, createRateLimiter } from './limits.ts';
@@ -19,6 +22,7 @@ export type { Handler, HandlerOptions, HttpRequest, HttpResponse } from './handl
 export { createHttpServer } from './server.ts';
 export type { ServerOptions } from './server.ts';
 export { buildDemoReport, demoDeps } from './demo.ts';
+export { DEMO_FIX_LOCKFILE, DEMO_FIX_PACKAGE_JSON, DEMO_FIX_TICKETS } from './fix-demo.ts';
 export { downloadGithubArchive, extractProject, parseGithubUrl } from './archive.ts';
 export type { ExtractedProject, GithubTarget } from './archive.ts';
 export { readZip } from './zip.ts';
