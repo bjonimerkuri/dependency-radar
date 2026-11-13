@@ -2,12 +2,7 @@
 
 Tells you which dependency updates will break your code.
 
-## Status
 
-Parts 1 to 4, 7, 8 and 9.1 to 9.2 are done in `@dependency-radar/core`, `@dependency-radar/cli` prints the result in the terminal, and `@dependency-radar/service` is a web service that serves the same analysis in a browser.
-
-- Part 1: reads and validates a package.json (and an optional package-lock.json), classifies every version specifier, and records the exact line and column of each dependency.
-- Part 2: looks up each package in the npm registry (retries, backoff, timeouts, host allow-list, cache) and gives every dependency a preliminary verdict from semver: safe, review or breaking candidate, with a confidence level and the reasons.
 
 ## Requirements
 
