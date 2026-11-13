@@ -7,6 +7,8 @@ COPY packages/core/package.json packages/core/
 COPY packages/cli/package.json packages/cli/
 COPY packages/service/package.json packages/service/
 RUN npm ci --omit=dev
+RUN mkdir -p node_modules/@dependency-radar \
+	&& ln -s /app/packages/core node_modules/@dependency-radar/core
 COPY packages ./packages
 USER node
 EXPOSE 8080
