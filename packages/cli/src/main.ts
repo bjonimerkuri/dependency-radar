@@ -26,6 +26,7 @@ import { CHECK_HELP, HELP, parseArgs, parseCheckArgs } from './args.ts';
 import { collectRepoFiles, collectSourceFiles } from './files.ts';
 import { formatRiskReport } from './format-risk.ts';
 import { formatReport } from './format.ts';
+import { runFix } from './fix.ts';
 
 function readText(path: string): string | undefined {
   try {
@@ -89,8 +90,35 @@ async function runCheck(argv: readonly string[]): Promise<number> {
   return 0;
 }
 
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function runFixCommand(argv: readonly string[]): Promise<number> {
+  return runFix(argv, {
+    readText,
+    readStdin,
+    writeText: (path, text) => {
+      try {
+        writeFileSync(resolve(path), text);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    collectSources: collectSourceFiles,
+    out: (text) => void process.stdout.write(text),
+    err: (text) => void console.error(text),
+    color: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
+    now: () => new Date(),
+  });
+}
+
 async function run(argv: readonly string[]): Promise<number> {
   if (argv[0] === 'check') return runCheck(argv.slice(1));
+  if (argv[0] === 'fix') return runFixCommand(argv.slice(1));
   const args = parseArgs(argv);
   if (args.error) {
     console.error(args.error);
