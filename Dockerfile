@@ -2,10 +2,11 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json ./
+COPY package-lock.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/cli/package.json packages/cli/
 COPY packages/service/package.json packages/service/
-RUN npm install --omit=dev --workspaces --include-workspace-root
+RUN npm ci --omit=dev --workspaces --include-workspace-root
 COPY packages ./packages
 USER node
 EXPOSE 8080
